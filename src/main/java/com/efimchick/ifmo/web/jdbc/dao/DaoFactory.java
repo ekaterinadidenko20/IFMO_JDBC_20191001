@@ -5,10 +5,10 @@ import com.efimchick.ifmo.web.jdbc.domain.Department;
 import com.efimchick.ifmo.web.jdbc.domain.Employee;
 import com.efimchick.ifmo.web.jdbc.domain.FullName;
 import com.efimchick.ifmo.web.jdbc.domain.Position;
-
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -16,30 +16,14 @@ import java.util.*;
 
 public class DaoFactory {
 
-    List<Employee> Eml;
-
-    {
+    private Employee employeeRowMapper(ResultSet resultSet) {
         try {
-            Eml = getEmployees();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-    }
-
-    List<Department> Deps;
-
-    {
-        try {
-            Deps = getDepartments();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private Employee employeeRowMapper(ResultSet resultSet) throws SQLException {
-        try {
-            BigInteger manId = resultSet.getString("MANAGER") == null ? BigInteger.ZERO :BigInteger.valueOf(Long.parseLong(resultSet.getString("MANAGER")));
-            BigInteger depId = resultSet.getString("DEPARTMENT") == null ? BigInteger.ZERO :BigInteger.valueOf(Long.parseLong(resultSet.getString("DEPARTMENT")));
+            BigInteger managerId = BigInteger.ZERO;
+            BigInteger departmentId = BigInteger.ZERO;
+            if (!Position.valueOf(resultSet.getString("POSITION")).equals(Position.PRESIDENT)) {
+                managerId = BigInteger.valueOf(resultSet.getInt("MANAGER"));
+                departmentId = BigInteger.valueOf(resultSet.getInt("DEPARTMENT"));
+            }
             Employee e = new Employee(
                     BigInteger.valueOf(resultSet.getInt("ID")),
                     new FullName(
@@ -50,11 +34,25 @@ public class DaoFactory {
                     Position.valueOf(resultSet.getString("POSITION")),
                     LocalDate.parse(resultSet.getString("HIREDATE")),
                     BigDecimal.valueOf(resultSet.getInt("SALARY")),
-                    manId,
-                    depId
+                    managerId,
+                    departmentId
             );
             return e;
         } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Department departmentRowMapper(ResultSet resultSet) {
+        try {
+            Department department = new Department(
+                    BigInteger.valueOf(resultSet.getInt("ID")),
+                    resultSet.getString("NAME"),
+                    resultSet.getString("LOCATION")
+            );
+            return department;
+        } catch (SQLException e) {
+            e.printStackTrace();
             return null;
         }
     }
@@ -65,81 +63,102 @@ public class DaoFactory {
         return connection.createStatement().executeQuery(s);
     }
 
-    private List<Employee> getEmployees() throws SQLException {
-        ResultSet resultSet = getResultSet("SELECT * FROM EMPLOYEE");
-        List<Employee> employees = new LinkedList<>();
-        while (resultSet.next()) {
-            Employee employee = employeeRowMapper(resultSet);
-            employees.add(employee);
-        }
-        return employees;
-    }
-
-    private List<Department> getDepartments() throws SQLException {
-        ResultSet resultSet = getResultSet("SELECT * FROM DEPARTMENT");
-        List<Department> departments = new LinkedList<>();
-        while (resultSet.next()) {
-            Department department = new Department(
-                    BigInteger.valueOf(resultSet.getInt("ID")),
-                    resultSet.getString("NAME"),
-                    resultSet.getString("LOCATION")
-            );
-            departments.add(department);
-        }
-        return departments;
+    private PreparedStatement getPreparedStatement(String s) throws SQLException {
+        ConnectionSource connectionSource = ConnectionSource.instance();
+        Connection connection = connectionSource.createConnection();
+        return connection.prepareStatement(s);
     }
 
     public EmployeeDao employeeDAO() {
         return new EmployeeDao() {
             @Override
             public List<Employee> getByDepartment(Department department) {
-                List<Employee> res = new ArrayList<>();
-                for (int i = 0; i < Eml.size(); i++) {
-                    Employee e = Eml.get(i);
-                    if (e.getDepartmentId() != null && e.getDepartmentId().equals(department.getId()))
-                        res.add(e);
+                try {
+                    ResultSet resultSet = getResultSet("select * from employee where department = " + department.getId());
+                    List<Employee> employees = new ArrayList<>();
+                    while (resultSet.next()) {
+                        employees.add(employeeRowMapper(resultSet));
+                    }
+                    return employees;
+                } catch (SQLException e) {
+                    return null;
                 }
-                return res;
             }
 
             @Override
-            public List<Employee> getByManager(Employee manager) {
-                List<Employee> res = new ArrayList<>();
-                for (int i = 0; i < Eml.size(); i++) {
-                    Employee e = Eml.get(i);
-                    if (e.getManagerId() != null && e.getManagerId().equals(manager.getId())) {
-                        res.add(e);
+            public List<Employee> getByManager(Employee employee) {
+                try {
+                    ResultSet resultSet = getResultSet("select * from employee where manager = " + employee.getId());
+                    List<Employee> employees = new ArrayList<>();
+                    while (resultSet.next()) {
+                        employees.add(employeeRowMapper(resultSet));
                     }
+                    return employees;
+                } catch (SQLException e) {
+                    return null;
                 }
-                return res;
             }
 
             @Override
             public Optional<Employee> getById(BigInteger Id) {
-                for (int i = 0; i < Eml.size(); i++) {
-                    Employee e = Eml.get(i);
-                    if (e.getId().equals(Id)) {
-                        return Optional.of(e);
+                try {
+                    ResultSet resultSet = getResultSet("select * from employee where id = " + Id);
+                    List<Employee> employees = new ArrayList<>();
+                    while (resultSet.next()) {
+                        employees.add(employeeRowMapper(resultSet));
                     }
+                    if (employees.isEmpty()) {
+                        return Optional.empty();
+                    } else {
+                        return Optional.of(employees.get(0));
+                    }
+                } catch (SQLException e) {
+                    return Optional.empty();
                 }
-                return Optional.empty();
             }
 
             @Override
             public List<Employee> getAll() {
-                return Eml;
+                try {
+                    ResultSet resultSet = getResultSet("select * from employee");
+                    List<Employee> employees = new ArrayList<>();
+                    while (resultSet.next()) {
+                        employees.add(employeeRowMapper(resultSet));
+                    }
+                    return employees;
+                } catch (SQLException e) {
+                    return null;
+                }
             }
-
 
             @Override
             public Employee save(Employee employee) {
-                Eml.add(employee);
+                try {
+                    PreparedStatement preparedStatement = getPreparedStatement("insert into employee values (?,?,?,?,?,?,?,?,?)");
+                    preparedStatement.setInt(1, employee.getId().intValue());
+                    preparedStatement.setString(2, employee.getFullName().getFirstName());
+                    preparedStatement.setString(3, employee.getFullName().getLastName());
+                    preparedStatement.setString(4, employee.getFullName().getMiddleName());
+                    preparedStatement.setString(5, employee.getPosition().toString());
+                    preparedStatement.setInt(6, employee.getManagerId().intValue());
+                    preparedStatement.setString(7, employee.getHired().toString());
+                    preparedStatement.setDouble(8, employee.getSalary().doubleValue());
+                    preparedStatement.setInt(9, employee.getDepartmentId().intValue());
+                    preparedStatement.executeUpdate();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
                 return employee;
             }
 
             @Override
             public void delete(Employee employee) {
-                Eml.remove(employee);
+                try {
+                    PreparedStatement preparedStatement = getPreparedStatement("delete from employee where id = " + employee.getId());
+                    preparedStatement.executeUpdate();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
             }
         };
     }
@@ -148,34 +167,68 @@ public class DaoFactory {
         return new DepartmentDao() {
             @Override
             public Optional<Department> getById(BigInteger Id) {
-                for (int i = 0; i < Deps.size(); i++) {
-                    Department d = Deps.get(i);
-                    if (d.getId().equals(Id)) {
-                        return Optional.of(d);
+                try {
+                    ResultSet resultSet = getResultSet("select * from department where id = " + Id);
+                    List<Department> departments = new ArrayList<>();
+                    while (resultSet.next()) {
+                        departments.add(departmentRowMapper(resultSet));
                     }
+                    if (departments.isEmpty()) {
+                        return Optional.empty();
+                    } else {
+                        return Optional.of(departments.get(0));
+                    }
+                } catch (SQLException e) {
+                    return Optional.empty();
                 }
-                return Optional.empty();
             }
 
             @Override
             public List<Department> getAll() {
-                return Deps;
+                try {
+                    ResultSet resultSet = getResultSet("select * from department ");
+                    List<Department> departments = new ArrayList<>();
+                    while (resultSet.next()) {
+                        departments.add(departmentRowMapper(resultSet));
+                    }
+                    return departments;
+                } catch (SQLException e) {
+                    return null;
+                }
             }
 
             @Override
             public Department save(Department department) {
-                for (int i = 0; i < Deps.size(); i++) {
-                    if (Deps.get(i).getId().equals(department.getId())){
-                        Deps.remove(Deps.get(i));
+                try {
+                    Optional<Department> optionalDepartment = getById(department.getId());
+                    if (optionalDepartment.isPresent()){
+                        PreparedStatement preparedStatement = getPreparedStatement(
+                                "update department set name=?,location=? where id=?");
+                        preparedStatement.setInt(3, department.getId().intValue());
+                        preparedStatement.setString(1, department.getName());
+                        preparedStatement.setString(2, department.getLocation());
+                        preparedStatement.executeUpdate();
+                    } else {
+                        PreparedStatement preparedStatement = getPreparedStatement("insert into department values (?,?,?)");
+                        preparedStatement.setInt(1, department.getId().intValue());
+                        preparedStatement.setString(2, department.getName());
+                        preparedStatement.setString(3, department.getLocation());
+                        preparedStatement.executeUpdate();
                     }
+                } catch (SQLException e) {
+                    e.printStackTrace();
                 }
-                Deps.add(department);
                 return department;
             }
 
             @Override
             public void delete(Department department) {
-                Deps.remove(department);
+                try {
+                    PreparedStatement preparedStatement = getPreparedStatement("delete from department where id = " + department.getId());
+                    preparedStatement.executeUpdate();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
             }
         };
     }
