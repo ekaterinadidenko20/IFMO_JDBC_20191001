@@ -144,7 +144,7 @@ public class ServiceFactory {
     private ResultSet getResultSet(String s) throws SQLException {
         ConnectionSource connectionSource = ConnectionSource.instance();
         Connection connection = connectionSource.createConnection();
-        return connection.createStatement().executeQuery(s);
+        return connection.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_UPDATABLE).executeQuery(s);
     }
 
     private List<Employee> getEmployees() throws SQLException {
@@ -171,7 +171,7 @@ public class ServiceFactory {
         return departments;
     }
 
-    List getPaging(List list, Paging paging) {
+    List<Employee> getPaging(List<Employee> list, Paging paging) {
         return list.subList(paging.itemPerPage * (paging.page - 1), Math.min(paging.itemPerPage * paging.page, list.size()));
     }
 
@@ -180,6 +180,7 @@ public class ServiceFactory {
             @Override
             public List<Employee> getAllSortByHireDate(Paging paging) {
                 List<Employee> cur = Eml;
+
                 cur.sort(new Comparator<Employee>() {
                     @Override
                     public int compare(Employee o1, Employee o2) {
